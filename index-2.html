@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="ja">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>VORTEX — 渦になる粒子</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#080e18;color:#e5edf7;font-family:system-ui,-apple-system,sans-serif}main{max-width:1400px;margin:auto;padding:30px}header{display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;gap:20px}.eyebrow{font-size:10px;color:#70d9d2;letter-spacing:.22em}h1{font-size:clamp(38px,6vw,72px);letter-spacing:-.05em;line-height:1;margin:12px 0}header p{font-size:12px;color:#9aadc4;line-height:1.9}.layout{display:grid;grid-template-columns:1fr 260px;gap:18px}.stage{position:relative;border:1px solid #263245;border-radius:14px;overflow:hidden;background:#0b1422}canvas{display:block;width:100%;height:610px;touch-action:none;outline-offset:-5px}.tag{position:absolute;left:22px;bottom:18px;pointer-events:none;font-size:10px;letter-spacing:.13em;color:#a3b9cd}.panel{background:#111c2b;border:1px solid #263245;border-radius:14px;padding:25px}.panel h2{font-size:14px;margin:0 0 28px}.control{margin-bottom:26px}label{display:flex;justify-content:space-between;font-size:12px;margin-bottom:12px}output{color:#77ded6;font-variant-numeric:tabular-nums}input[type=range]{width:100%;accent-color:#72ded4;cursor:pointer}small{display:block;font-size:10px;color:#9aadc4;line-height:1.8;margin-top:7px}button{font:inherit;font-size:12px;width:100%;padding:12px;border:1px solid #42566e;border-radius:7px;background:#17283a;color:#dcebf7;cursor:pointer;margin-top:9px}button:hover{background:#253d52}button:focus-visible,input:focus-visible{outline:2px solid #7cf3df;outline-offset:4px}.primary{color:#91eee0;border-color:#4d8b87}.instructions{font-size:11px;line-height:2;color:#a2b3c8;border-top:1px solid #2a3a4f;margin-top:24px;padding-top:17px}footer{display:flex;justify-content:space-between;gap:15px;margin-top:18px;color:#8b9db4;font-size:10px;letter-spacing:.1em}@media(max-width:760px){main{padding:22px 14px}header{display:block}header p{margin-bottom:0}.layout{grid-template-columns:1fr}canvas{height:440px}.panel{padding:22px}.control{margin-bottom:22px}footer{font-size:9px}}
+</style></head><body><main>
+<header><div><div class="eyebrow">PARAMETRIC PLAYGROUND / 02</div><h1>VORTEX</h1></div><p>秩序をほどいて、渦をつくる。<br>マウスで旋回。クリックで、ひと波。</p></header>
+<div class="layout"><section class="stage"><canvas id="field" tabindex="0" aria-label="渦になる粒子。マウスで操作、クリックで波。矢印キーで渦を移動、スペースで波、Escapeで格子へ戻します。">Canvas対応ブラウザで開いてください。</canvas><div class="tag">MOVE TO SWIRL · CLICK TO RIPPLE</div></section>
+<aside class="panel"><h2>渦を調整する</h2>
+<div class="control"><label for="strength">渦の強さ <output id="strengthValue">6</output></label><input id="strength" type="range" min="1" max="12" value="6"><small>大きいほど、勢いよく旋回します。</small></div>
+<div class="control"><label for="reach">反応する範囲 <output id="reachValue">200 px</output></label><input id="reach" type="range" min="80" max="340" value="200"><small>大きいほど、多くの粒子を巻き込みます。</small></div>
+<div class="control"><label for="spring">戻る力 <output id="springValue">4</output></label><input id="spring" type="range" min="1" max="10" value="4"><small>小さくすると、粒子が大きく広がります。</small></div>
+<button id="direction" type="button">回転方向：時計回り</button><button id="pause" type="button" aria-pressed="false">一時停止</button><button id="reset" type="button" class="primary">粒子を整列・設定をリセット</button>
+<div class="instructions">マウスを動かす：渦をつくる<br>クリック / タップ：波を広げる<br>枠の外へ移動：格子に戻る<br><br>スマホでは指でなぞって操作。<br>キーボード：枠を選んで矢印キー、スペースで波、Escで戻す。</div>
+</aside></div><footer><span>GRID → VORTEX → GRID</span><span>HTML / CSS / JavaScript</span></footer>
+</main><script>
+const canvas = document.getElementById('field');
+const ctx = canvas.getContext('2d');
+const inputs = ['strength','reach','spring'].map(id => document.getElementById(id));
+const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+let width=0, height=0, particles=[], waves=[];
+let pointer={x:0,y:0,active:false};
+let direction=1, paused=reducedMotion, lastTime=0, accumulator=0;
+
+function rebuild(){
+  const rect=canvas.getBoundingClientRect();
+  width=rect.width; height=rect.height;
+  const dpr=Math.min(window.devicePixelRatio||1,2);
+  canvas.width=Math.round(width*dpr); canvas.height=Math.round(height*dpr);
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  const spacing=19;
+  const cols=Math.max(1,Math.floor((width-32)/spacing));
+  const rows=Math.max(1,Math.floor((height-40)/spacing));
+  particles=[]; waves=[];
+  for(let i=0;i<=cols;i++)for(let j=0;j<=rows;j++){
+    const x=(width-cols*spacing)/2+i*spacing;
+    const y=(height-rows*spacing)/2+j*spacing;
+    particles.push({x,y,homeX:x,homeY:y,vx:0,vy:0,oldX:x,oldY:y});
+  }
+  pointer={x:width/2,y:height/2,active:false};
+  render();
+}
+
+// 格子へ戻す力と、ポインターの周りを回す力を足し合わせる。
+// 固定時間刻みで計算し、画面のリフレッシュレートによる速度差を抑える。
+function step(){
+  const [strength,reach,spring]=inputs.map(input=>Number(input.value));
+  for(const wave of waves)wave.radius+=7;
+  waves=waves.filter(wave=>wave.radius<Math.hypot(width,height)+100);
+  for(const p of particles){
+    p.oldX=p.x; p.oldY=p.y;
+    let ax=(p.homeX-p.x)*spring*0.0017;
+    let ay=(p.homeY-p.y)*spring*0.0017;
+    if(pointer.active){
+      const dx=p.x-pointer.x,dy=p.y-pointer.y;
+      const distance=Math.hypot(dx,dy);
+      if(distance<reach){
+        const falloff=1-distance/reach;
+        const denominator=Math.max(distance,12);
+        const force=strength*0.17*falloff;
+        ax+=(-dy*direction-dx*0.24)/denominator*force;
+        ay+=(dx*direction-dy*0.24)/denominator*force;
+      }
+    }
+    // 薄いリング状の力を外へ伝えて、クリック地点から波を広げる。
+    for(const wave of waves){
+      const dx=p.x-wave.x,dy=p.y-wave.y,distance=Math.hypot(dx,dy);
+      const band=Math.abs(distance-wave.radius);
+      if(band<28){
+        const push=(1-band/28)*1.5*Math.exp(-wave.radius/700);
+        ax+=dx/Math.max(distance,1)*push;
+        ay+=dy/Math.max(distance,1)*push;
+      }
+    }
+    p.vx=(p.vx+ax)*0.94; p.vy=(p.vy+ay)*0.94;
+    const speed=Math.hypot(p.vx,p.vy);
+    if(speed>12){p.vx*=12/speed;p.vy*=12/speed;}
+    p.x+=p.vx;p.y+=p.vy;
+  }
+}
+function render(){
+  ctx.fillStyle='#0b1422';ctx.fillRect(0,0,width,height);
+  ctx.lineWidth=1.1;
+  for(const p of particles){
+    const speed=Math.hypot(p.vx,p.vy);
+    const displacement=Math.min(1,Math.hypot(p.x-p.homeX,p.y-p.homeY)/150);
+    const hue=174+95*displacement;
+    ctx.fillStyle=`hsl(${hue},75%,${57+16*displacement}%)`;
+    if(speed>0.3){
+      ctx.strokeStyle=`hsla(${hue},80%,65%,0.45)`;
+      ctx.beginPath();ctx.moveTo(p.x-p.vx*2.5,p.y-p.vy*2.5);ctx.lineTo(p.x,p.y);ctx.stroke();
+    }
+    ctx.beginPath();ctx.arc(p.x,p.y,1.65+Math.min(speed*0.16,1.5),0,Math.PI*2);ctx.fill();
+  }
+  if(pointer.active){
+    ctx.strokeStyle='#89e9df55';ctx.lineWidth=1;
+    ctx.beginPath();ctx.arc(pointer.x,pointer.y,8,0,Math.PI*2);ctx.stroke();
+  }
+}
+function animate(time){
+  const elapsed=lastTime?Math.min(time-lastTime,50):0;lastTime=time;
+  if(!paused&&!document.hidden){
+    accumulator+=elapsed;
+    while(accumulator>=1000/60){step();accumulator-=1000/60;}
+    render();
+  }else accumulator=0;
+  requestAnimationFrame(animate);
+}
+function locate(event){
+  const rect=canvas.getBoundingClientRect();
+  pointer={x:event.clientX-rect.left,y:event.clientY-rect.top,active:true};
+  if(paused)render();
+}
+canvas.addEventListener('pointermove',locate);
+canvas.addEventListener('pointerdown',event=>{locate(event);canvas.focus({preventScroll:true});waves.push({x:pointer.x,y:pointer.y,radius:0});waves=waves.slice(-8);});
+canvas.addEventListener('pointerleave',()=>{pointer.active=false;if(paused)render();});
+for(const eventName of ['pointerup','pointercancel'])canvas.addEventListener(eventName,event=>{if(event.pointerType!=='mouse'){pointer.active=false;if(paused)render();}});
+canvas.addEventListener('blur',()=>{pointer.active=false;if(paused)render();});
+canvas.addEventListener('keydown',event=>{
+  const delta={ArrowLeft:[-20,0],ArrowRight:[20,0],ArrowUp:[0,-20],ArrowDown:[0,20]}[event.key];
+  if(delta){event.preventDefault();pointer.active=true;pointer.x=Math.max(0,Math.min(width,pointer.x+delta[0]));pointer.y=Math.max(0,Math.min(height,pointer.y+delta[1]));}
+  else if(event.code==='Space'){event.preventDefault();waves.push({x:pointer.x,y:pointer.y,radius:0});waves=waves.slice(-8);}
+  else if(event.key==='Escape')pointer.active=false;
+  if(paused)render();
+});
+function labels(){inputs.forEach(input=>document.getElementById(input.id+'Value').textContent=input.value+(input.id==='reach'?' px':''));}
+function pauseLabel(){const button=document.getElementById('pause');button.textContent=paused?'再生する':'一時停止';button.setAttribute('aria-pressed',String(paused));}
+inputs.forEach(input=>input.addEventListener('input',labels));
+document.getElementById('direction').addEventListener('click',()=>{direction*=-1;document.getElementById('direction').textContent='回転方向：'+(direction===1?'時計回り':'反時計回り');});
+document.getElementById('pause').addEventListener('click',()=>{paused=!paused;pauseLabel();});
+document.getElementById('reset').addEventListener('click',()=>{inputs.forEach(input=>input.value=input.defaultValue);direction=1;document.getElementById('direction').textContent='回転方向：時計回り';labels();rebuild();});
+new ResizeObserver(rebuild).observe(canvas);
+pauseLabel();requestAnimationFrame(animate);
+</script></body></html>
