@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DOT FIELD — 近さで変わる模様</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f3f1eb;color:#203a34;font-family:system-ui,-apple-system,sans-serif}main{max-width:1280px;margin:auto;padding:38px 28px}header{display:flex;justify-content:space-between;align-items:center;gap:20px;margin-bottom:26px}.eyebrow{font-size:11px;letter-spacing:.18em;font-weight:700}h1{font-size:clamp(32px,5vw,58px);letter-spacing:-.05em;margin:8px 0}header p{font-size:13px;line-height:1.9;color:#56685f}.layout{display:grid;grid-template-columns:1fr 270px;gap:22px}.field{background:#103c34;border-radius:12px;overflow:hidden;position:relative}canvas{width:100%;height:580px;display:block;touch-action:pan-y;outline-offset:-5px}.caption{position:absolute;bottom:18px;left:22px;font-size:10px;letter-spacing:.15em;color:#bdd1bc;pointer-events:none}.controls{padding:26px;background:#fffdf7;border:1px solid #d9ded1;border-radius:12px}.controls h2{font-size:15px;margin:0 0 30px}.control{margin-bottom:30px}label{display:flex;justify-content:space-between;font-size:13px;margin-bottom:13px}output{font-variant-numeric:tabular-nums;color:#486b59}input[type=range]{width:100%;accent-color:#245b45;cursor:pointer}small{font-size:11px;line-height:1.8;color:#617366;display:block;margin-top:8px}button{border:1px solid #c2cebd;background:transparent;color:#203a34;border-radius:6px;padding:11px 16px;font:inherit;font-size:12px;cursor:pointer;width:100%}button:hover{background:#e9eddf}button:focus-visible,input:focus-visible{outline:3px solid #b18b36;outline-offset:4px}.note{font-size:12px;line-height:1.9;color:#56685f;margin:22px 0 0}.formula{border-top:1px solid #d5dcd0;padding-top:16px;margin-top:24px;font-size:11px;line-height:1.9;color:#617366}footer{display:flex;justify-content:space-between;margin-top:18px;font-size:10px;letter-spacing:.1em;color:#697b6f}@media(max-width:760px){main{padding:24px 16px}header{display:block}header p{margin:8px 0}.layout{grid-template-columns:1fr}canvas{height:430px}.controls{padding:22px}.controls h2{margin-bottom:22px}.control{margin-bottom:20px}footer{gap:12px}}
+</style>
+</head>
+<body>
+<main>
+<header><div><div class="eyebrow">PARAMETRIC PLAYGROUND / 01</div><h1>DOT FIELD</h1></div><p>近さが、模様を変えていく。<br>マウスを動かすか、画面をタッチしてみよう。</p></header>
+<div class="layout">
+<section class="field" aria-label="インタラクティブな円の模様"><canvas id="field" tabindex="0" aria-label="円の模様。マウスやタッチで中心を移動。キーボードの矢印キーでも操作できます。">円の模様を表示するにはCanvasに対応したブラウザを使用してください。</canvas><div class="caption">MOVE YOUR POINTER · EXPLORE THE FIELD</div></section>
+<aside class="controls"><h2>模様を調整する</h2>
+<div class="control"><label for="spacing">円の間隔 <output id="spacingValue" for="spacing">28 px</output></label><input id="spacing" type="range" min="16" max="60" value="28"><small>小さくすると、円が密に並びます。</small></div>
+<div class="control"><label for="reach">反応する範囲 <output id="reachValue" for="reach">180 px</output></label><input id="reach" type="range" min="60" max="360" value="180"><small>大きくすると、遠くの円まで反応します。</small></div>
+<div class="control"><label for="size">最大サイズ（半径） <output id="sizeValue" for="size">16 px</output></label><input id="size" type="range" min="4" max="40" value="16"><small>大きくすると、円同士が重なります。</small></div>
+<button id="reset" type="button">初期設定に戻す</button>
+<p class="note">操作のヒント<br>円の間隔を狭くして、最大サイズを大きくすると、点がつながって面のように見えます。</p>
+<div class="formula">しくみ<br>各円とポインターの距離を測り、近い円ほど大きく、明るく表示しています。<br>キーボード：模様を選択して矢印キー。</div>
+</aside></div><footer><span>DISTANCE → RADIUS → PATTERN</span><span>HTML / CSS / JavaScript</span></footer>
+</main>
+<script>
+// 1. 操作する要素を取得する。
+const canvas = document.getElementById('field');
+const ctx = canvas.getContext('2d');
+const controls = ['spacing', 'reach', 'size'].map(id => document.getElementById(id));
+let width = 0, height = 0;
+let pointer = { x: 0, y: 0 };
+let initialized = false;
+
+// 2. 距離を0〜1の「近さ」に変換する。範囲の外は0。
+function influence(distance, reach) {
+  return Math.max(0, 1 - distance / reach);
+}
+
+// 3. 同じ間隔で円を並べ、それぞれの半径を距離から決める。
+function draw() {
+  const [spacing, reach, maxRadius] = controls.map(input => Number(input.value));
+  ctx.clearRect(0, 0, width, height);
+  const columns = Math.floor(width / spacing);
+  const rows = Math.floor(height / spacing);
+  const startX = (width - columns * spacing) / 2;
+  const startY = (height - rows * spacing) / 2;
+  for (let col = 0; col <= columns; col++) {
+    for (let row = 0; row <= rows; row++) {
+      const x = startX + col * spacing;
+      const y = startY + row * spacing;
+      const distance = Math.hypot(x - pointer.x, y - pointer.y);
+      const proximity = influence(distance, reach);
+      const radius = 2 + (maxRadius - 2) * proximity * proximity;
+      const hue = 155 - 92 * proximity;
+      ctx.fillStyle = `hsl(${hue}, ${28 + 36 * proximity}%, ${43 + 34 * proximity}%)`;
+      ctx.beginPath();
+      ctx.arc(x, y, radius, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+}
+
+// 高解像度ディスプレイでも、円の輪郭を鮮明に表示する。
+function resize() {
+  const oldWidth = width, oldHeight = height;
+  const rect = canvas.getBoundingClientRect();
+  width = rect.width;
+  height = rect.height;
+  const scale = window.devicePixelRatio || 1;
+  canvas.width = Math.round(width * scale);
+  canvas.height = Math.round(height * scale);
+  ctx.setTransform(scale, 0, 0, scale, 0, 0);
+  pointer = initialized ? { x: pointer.x * width / oldWidth, y: pointer.y * height / oldHeight } : { x: width / 2, y: height / 2 };
+  initialized = true;
+  draw();
+}
+
+function movePointer(event) {
+  const rect = canvas.getBoundingClientRect();
+  pointer = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+  draw();
+}
+canvas.addEventListener('pointermove', movePointer);
+canvas.addEventListener('pointerdown', movePointer);
+canvas.addEventListener('keydown', event => {
+  const delta = { ArrowLeft: [-15, 0], ArrowRight: [15, 0], ArrowUp: [0, -15], ArrowDown: [0, 15] }[event.key];
+  if (!delta) return;
+  event.preventDefault();
+  pointer.x = Math.max(0, Math.min(width, pointer.x + delta[0]));
+  pointer.y = Math.max(0, Math.min(height, pointer.y + delta[1]));
+  draw();
+});
+function update() {
+  controls.forEach(input => document.getElementById(input.id + 'Value').textContent = input.value + ' px');
+  draw();
+}
+controls.forEach(input => input.addEventListener('input', update));
+document.getElementById('reset').addEventListener('click', () => {
+  controls.forEach(input => input.value = input.defaultValue);
+  pointer = { x: width / 2, y: height / 2 };
+  update();
+});
+new ResizeObserver(resize).observe(canvas);
+</script>
+</body>
+</html>
